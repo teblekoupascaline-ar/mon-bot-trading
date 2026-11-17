@@ -4,31 +4,28 @@ import pandas as pd
 import pandas_ta_classic as ta
 import plotly.graph_objects as go
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Terminal Trading", layout="wide", initial_sidebar_state="collapsed")
+# --- CONFIGURATION (Menu ouvert par défaut pour mobile) ---
+st.set_page_config(page_title="Terminal Trading", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS SUR MESURE (TRADINGVIEW STYLE) ---
+# --- CSS SUR MESURE ---
 st.markdown("""
 <style>
-    /* Masquer les éléments inutiles de Streamlit pour gagner de la place sur mobile */
+    /* Masquer les éléments inutiles */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
     
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     
     .stApp {
-        background-color: #131722; /* Fond TradingView */
+        background-color: #131722; 
         font-family: 'Inter', sans-serif;
         color: #d1d4dc !important;
     }
 
-    /* Forcer la couleur du texte pour éviter le texte noir illisible */
     div, p, span, label {
         color: #d1d4dc !important;
     }
 
-    /* Bandeau supérieur compact */
     .top-bar {
         display: flex;
         justify-content: space-between;
@@ -48,7 +45,6 @@ st.markdown("""
         font-size: 10px;
         color: #787b86 !important;
         text-transform: uppercase;
-        letter-spacing: 1px;
     }
     
     .metric-value {
@@ -57,12 +53,10 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* Styles des signaux */
-    .signal-buy { color: #089981 !important; } /* Vert TradingView */
-    .signal-sell { color: #f23645 !important; } /* Rouge TradingView */
-    .signal-neutral { color: #fbc02d !important; } /* Jaune */
+    .signal-buy { color: #089981 !important; }
+    .signal-sell { color: #f23645 !important; }
+    .signal-neutral { color: #fbc02d !important; }
 
-    /* Animation Pulse */
     @keyframes pulse-green {
         0% { box-shadow: 0 0 0 0 rgba(8, 153, 129, 0.7); }
         70% { box-shadow: 0 0 0 10px rgba(8, 153, 129, 0); }
@@ -74,23 +68,9 @@ st.markdown("""
         100% { box-shadow: 0 0 0 0 rgba(242, 54, 69, 0); }
     }
     
-    .pulse-green {
-        background: rgba(8, 153, 129, 0.15);
-        border: 1px solid #089981;
-        border-radius: 6px;
-        padding: 5px 10px;
-        animation: pulse-green 2s infinite;
-    }
-    
-    .pulse-red {
-        background: rgba(242, 54, 69, 0.15);
-        border: 1px solid #f23645;
-        border-radius: 6px;
-        padding: 5px 10px;
-        animation: pulse-red 2s infinite;
-    }
+    .pulse-green { background: rgba(8, 153, 129, 0.15); border: 1px solid #089981; border-radius: 6px; padding: 5px 10px; animation: pulse-green 2s infinite; }
+    .pulse-red { background: rgba(242, 54, 69, 0.15); border: 1px solid #f23645; border-radius: 6px; padding: 5px 10px; animation: pulse-red 2s infinite; }
 
-    /* Boîte plan d'action */
     .action-box {
         background: #1e222d;
         border: 1px solid #2a2e39;
@@ -112,7 +92,7 @@ st.markdown("""
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("Paramètres")
+    st.header("Paramètres Système")
     actifs = {
         "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD", 
         "EUR/USD": "EURUSD=X", "Apple": "AAPL", 
@@ -120,13 +100,15 @@ with st.sidebar:
     }
     choix_actif = st.selectbox("Actif", list(actifs.keys()))
     ticker = actifs[choix_actif]
-    periode = st.selectbox("Période", ["6mo", "1y", "2y", "5y"], index=2)
+    
+    # On met 6 mois par défaut pour que les bougies soient lisibles
+    periode = st.selectbox("Période", ["3mo", "6mo", "1y", "2y"], index=1)
     
     st.divider()
     capital = st.number_input("Capital ($)", min_value=10.0, value=50.0, step=10.0)
     risque_pct = st.slider("Risque (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
     
-    if st.button("Actualiser", type="primary"):
+    if st.button("Actualiser les données", type="primary"):
         st.cache_data.clear()
 
 @st.cache_data(ttl=60)
@@ -143,7 +125,6 @@ with st.spinner("Analyse..."):
     df, df_w = charger_donnees(ticker, periode)
     
     if not df.empty and not df_w.empty:
-        # Calculs
         df['SMA_20'] = ta.sma(df['Close'], length=20)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
         df['SMA_200'] = ta.sma(df['Close'], length=200)
@@ -172,7 +153,6 @@ with st.spinner("Analyse..."):
         prix = dernier['Close']
         variation = ((prix - avant['Close']) / avant['Close']) * 100
         
-        # Définition du signal et de la couleur
         if score >= 50:
             signal_txt, sig_class, pulse = "ACHAT FORT", "signal-buy", "pulse-green"
         elif score > 0:
@@ -184,7 +164,7 @@ with st.spinner("Analyse..."):
         else:
             signal_txt, sig_class, pulse = "NEUTRE", "signal-neutral", ""
 
-        # --- BANDEAU SUPÉRIEUR COMPACT (Prix, RSI, Signal) ---
+        # --- BANDEAU SUPÉRIEUR ---
         st.markdown(f"""
         <div class="top-bar">
             <div class="metric-box">
@@ -211,7 +191,6 @@ with st.spinner("Analyse..."):
         ))
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='#fbc02d', width=1), name="SMA 50"))
         
-        # Plan d'action
         action_html = ""
         if score >= 20 or score <= -20:
             is_long = score >= 20
@@ -222,8 +201,8 @@ with st.spinner("Analyse..."):
             dist = abs(prix - sl)
             qte = risque / dist
             
-            fig.add_hline(y=sl, line_dash="dash", line_color="#f23645", annotation_text="SL")
-            fig.add_hline(y=tp, line_dash="dash", line_color="#089981", annotation_text="TP")
+            fig.add_hline(y=sl, line_dash="dash", line_color="#f23645", annotation_text="SL", annotation_position="top right")
+            fig.add_hline(y=tp, line_dash="dash", line_color="#089981", annotation_text="TP", annotation_position="bottom right")
             
             action_html = f"""
             <div class="action-box">
@@ -235,25 +214,35 @@ with st.spinner("Analyse..."):
         else:
             action_html = '<div class="action-box" style="text-align:center; color:#787b86 !important;">Attente de signal clair</div>'
 
-        # Configuration du graphique pour mobile (hauteur réduite, marges minimes)
+        # --- CONFIGURATION DU GRAPHIQUE POUR MOBILE ---
         fig.update_layout(
-            height=380, # Plus petit pour tenir sur l'écran
+            height=400, 
             template="plotly_dark", 
             dragmode="pan", 
             paper_bgcolor='#131722', plot_bgcolor='#131722',
-            margin=dict(l=5, r=5, t=5, b=5),
+            margin=dict(l=5, r=5, t=30, b=5),
             xaxis=dict(
-                rangeslider=dict(visible=False), # On l'enlève sur mobile pour gagner de la place
+                # RETOUR DES BOUTONS DE ZOOM
+                rangeselector=dict(
+                    buttons=list([
+                        dict(count=1, label="1M", step="month", stepmode="backward"),
+                        dict(count=3, label="3M", step="month", stepmode="backward"),
+                        dict(count=6, label="6M", step="month", stepmode="backward"),
+                        dict(step="all", label="Max")
+                    ]),
+                    bgcolor="#1e222d",
+                    activecolor="#2a2e39"
+                ),
+                # RETOUR DE LA BARRE DE SCROLL EN BAS
+                rangeslider=dict(visible=True, bgcolor="#1e222d"), 
                 type="date",
                 gridcolor="#2a2e39"
             ),
             yaxis=dict(gridcolor="#2a2e39"),
             legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10))
         )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}) # On cache la barre d'outils
+        # On garde la barre d'outils cachée mais on active le zoom tactile
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
         
-        # Affichage du plan d'action juste sous le graphique
         st.markdown(action_html, unsafe_allow_html=True)
-        
-        # Date
         st.markdown(f"<div style='text-align:center; font-size:10px; color:#787b86 !important; margin-top:10px;'>Données du {df.index[-1].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
