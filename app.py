@@ -213,7 +213,10 @@ if bouton_analyser or ticker:
                         type="date"
                     )
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True),
+                                # (Juste en dessous de st.plotly_chart)
+                date_derniere_bougie = df.index[-1].strftime('%d/%m/%Y')
+                st.caption(f"🕒 Dernière donnée disponible : **{date_derniere_bougie}** (Source : Yahoo Finance). Les données sont actualisées à chaque clôture.")
 
             with onglet_explication:
                 for raison in raisons:
