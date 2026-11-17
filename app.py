@@ -4,13 +4,16 @@ import pandas as pd
 import pandas_ta_classic as ta
 import plotly.graph_objects as go
 
+# Configuration de la page
 st.set_page_config(page_title="Mon Bot Trading PRO", page_icon="🚀", layout="wide")
 
 st.title("🚀 Mon Copilote de Trading PRO")
 st.write("Analyse multi-timeframes avec calcul de risque intégré.")
 
+# --- MENU SUR LE COTE ---
 with st.sidebar:
     st.header("⚙️ Paramètres")
+    
     actifs = {
         "Bitcoin (BTC-USD)": "BTC-USD",
         "Ethereum (ETH-USD)": "ETH-USD",
@@ -25,6 +28,7 @@ with st.sidebar:
     periode = st.selectbox("Période d'analyse", ["1y", "2y", "5y"], index=1)
     bouton_analyser = st.button("🔄 Lancer l'analyse", type="primary")
 
+# --- CHARGEMENT DES DONNEES ---
 @st.cache_data(ttl=3600)
 def charger_donnees(ticker, periode):
     # Données Quotidiennes
@@ -38,6 +42,7 @@ def charger_donnees(ticker, periode):
             
     return df_daily, df_weekly
 
+# --- LOGIQUE DU BOT ---
 if bouton_analyser or ticker:
     with st.spinner("Analyse Multi-Timeframes en cours..."):
         df, df_weekly = charger_donnees(ticker, periode)
@@ -45,7 +50,7 @@ if bouton_analyser or ticker:
         if df.empty or df_weekly.empty:
             st.error("Impossible de trouver ce ticker.")
         else:
-            # --- CALCUL INDICATEURS QUOTIDIENS ---
+            # Calcul des indicateurs Quotidiens
             df['SMA_20'] = ta.sma(df['Close'], length=20)
             df['SMA_50'] = ta.sma(df['Close'], length=50)
             df['SMA_200'] = ta.sma(df['Close'], length=200)
@@ -53,7 +58,7 @@ if bouton_analyser or ticker:
             df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
             df = df.dropna()
             
-            # --- CALCUL INDICATEURS HEBDO (SMA 20) ---
+            # Calcul des indicateurs Hebdomadaires
             df_weekly['SMA_20'] = ta.sma(df_weekly['Close'], length=20)
             df_weekly = df_weekly.dropna()
             
@@ -67,21 +72,17 @@ if bouton_analyser or ticker:
             # Tendance Hebdo (Macro)
             if dernier_weekly['Close'] > dernier_weekly['SMA_20']:
                 tendance_hebdo = "HAUSSIÈRE"
-                couleur_hebdo = "green"
                 score_hebdo = 1
             else:
                 tendance_hebdo = "BAISSIÈRE"
-                couleur_hebdo = "red"
                 score_hebdo = -1
                 
             # Tendance Quotidienne (Micro)
             if dernier['SMA_20'] > dernier['SMA_50']:
                 tendance_jour = "HAUSSIÈRE"
-                couleur_jour = "green"
                 score_jour = 1
             else:
                 tendance_jour = "BAISSIÈRE"
-                couleur_jour = "red"
                 score_jour = -1
 
             col_macro, col_micro = st.columns(2)
@@ -133,7 +134,6 @@ if bouton_analyser or ticker:
             col2.metric("RSI (14)", f"{dernier['RSI']:.1f}")
             col3.metric("ATR (Volatilité)", f"{dernier['ATR']:.2f}")
             
-            # On n'autorise un vrai signal que si le score est fort
             if score >= 50:
                 col4.success(f"🟢 ACHAT FORT\n\nScore: +{score}")
             elif score > 0:
@@ -148,7 +148,7 @@ if bouton_analyser or ticker:
             st.divider()
 
             # --- 4. PLAN D'ACTION ---
-            if score >= 20: # On ne prend que les signaux clairs
+            if score >= 20:
                 st.subheader("🎯 Plan d'Action (Achat)")
                 stop_loss = prix_actuel - (dernier['ATR'] * 1.5)
                 take_profit = prix_actuel + (dernier['ATR'] * 3.0)
@@ -184,21 +184,10 @@ if bouton_analyser or ticker:
                     fig.add_hline(y=stop_loss, line_dash="dash", line_color="red", annotation_text="Stop Loss")
                     fig.add_hline(y=take_profit, line_dash="dash", line_color="green", annotation_text="Take Profit")
 
-                                # ... (le début de ton graphique reste pareil) ...
-                fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='orange', width=1.5), name="SMA 50"))
-                fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='red', width=2), name="SMA 200"))
-                
-                if score >= 20 or score <= -20:
-                    fig.add_hline(y=stop_loss, line_dash="dash", line_color="red", annotation_text="Stop Loss")
-                    fig.add_hline(y=take_profit, line_dash="dash", line_color="green", annotation_text="Take Profit")
-
-                # --- C'EST ICI QU'ON ACTIVE LE ZOOM ET LE SCROLL ---
                 fig.update_layout(
                     height=500, 
                     template="plotly_dark",
-                    # On active la souris pour glisser le graphique
                     dragmode="pan", 
-                    # On configure la navigation
                     xaxis=dict(
                         rangeselector=dict(
                             buttons=list([
@@ -209,12 +198,13 @@ if bouton_analyser or ticker:
                                 dict(step="all", label="Tout")
                             ])
                         ),
-                        rangeslider=dict(visible=True), # La petite barre de scroll en bas
+                        rangeslider=dict(visible=True),
                         type="date"
                     )
                 )
-                st.plotly_chart(fig, use_container_width=True),
-                                # (Juste en dessous de st.plotly_chart)
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
                 date_derniere_bougie = df.index[-1].strftime('%d/%m/%Y')
                 st.caption(f"🕒 Dernière donnée disponible : **{date_derniere_bougie}** (Source : Yahoo Finance). Les données sont actualisées à chaque clôture.")
 
