@@ -4,13 +4,12 @@ import pandas as pd
 import pandas_ta_classic as ta
 import plotly.graph_objects as go
 
-# --- CONFIGURATION (Menu ouvert par défaut pour mobile) ---
+# --- CONFIGURATION ---
 st.set_page_config(page_title="Terminal Trading", layout="wide", initial_sidebar_state="expanded")
 
 # --- CSS SUR MESURE ---
 st.markdown("""
 <style>
-    /* Masquer les éléments inutiles */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
@@ -37,21 +36,9 @@ st.markdown("""
         border: 1px solid #2a2e39;
     }
     
-    .metric-box {
-        text-align: center;
-    }
-    
-    .metric-label {
-        font-size: 10px;
-        color: #787b86 !important;
-        text-transform: uppercase;
-    }
-    
-    .metric-value {
-        font-size: 16px;
-        font-weight: 800;
-        color: #ffffff !important;
-    }
+    .metric-box { text-align: center; }
+    .metric-label { font-size: 10px; color: #787b86 !important; text-transform: uppercase; }
+    .metric-value { font-size: 16px; font-weight: 800; color: #ffffff !important; }
 
     .signal-buy { color: #089981 !important; }
     .signal-sell { color: #f23645 !important; }
@@ -101,9 +88,6 @@ with st.sidebar:
     choix_actif = st.selectbox("Actif", list(actifs.keys()))
     ticker = actifs[choix_actif]
     
-    # On met 6 mois par défaut pour que les bougies soient lisibles
-    periode = st.selectbox("Période", ["3mo", "6mo", "1y", "2y"], index=1)
-    
     st.divider()
     capital = st.number_input("Capital ($)", min_value=10.0, value=50.0, step=10.0)
     risque_pct = st.slider("Risque (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
@@ -112,9 +96,10 @@ with st.sidebar:
         st.cache_data.clear()
 
 @st.cache_data(ttl=60)
-def charger_donnees(ticker, periode):
-    df = yf.download(ticker, period=periode, interval="1d", progress=False)
-    df_w = yf.download(ticker, period=periode, interval="1wk", progress=False)
+def charger_donnees(ticker):
+    # On télécharge TOUJOURS 2 ans de données pour que les calculs soient parfaits
+    df = yf.download(ticker, period="2y", interval="1d", progress=False)
+    df_w = yf.download(ticker, period="2y", interval="1wk", progress=False)
     for d in [df, df_w]:
         if isinstance(d.columns, pd.MultiIndex):
             d.columns = d.columns.get_level_values(0)
@@ -122,16 +107,24 @@ def charger_donnees(ticker, periode):
 
 # --- LOGIQUE PRINCIPALE ---
 with st.spinner("Analyse..."):
-    df, df_w = charger_donnees(ticker, periode)
+    df, df_w = charger_donnees(ticker)
     
     if not df.empty and not df_w.empty:
+        # Calcul des indicateurs
         df['SMA_20'] = ta.sma(df['Close'], length=20)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
         df['SMA_200'] = ta.sma(df['Close'], length=200)
         df['RSI'] = ta.rsi(df['Close'], length=14)
         df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+        
+        # On supprime les lignes vides (le début, car la SMA 200 n'existe pas encore)
         df = df.dropna()
         
+        # SÉCURITÉ ANTI-CRASH : Si l'actif est trop récent et n'a pas 200 jours d'historique
+        if df.empty:
+            st.error("Données insuffisantes pour cet actif (il faut au moins 200 jours d'historique pour calculer les indicateurs).")
+            st.stop()
+            
         df_w['SMA_20'] = ta.sma(df_w['Close'], length=20)
         df_w = df_w.dropna()
         
@@ -153,16 +146,11 @@ with st.spinner("Analyse..."):
         prix = dernier['Close']
         variation = ((prix - avant['Close']) / avant['Close']) * 100
         
-        if score >= 50:
-            signal_txt, sig_class, pulse = "ACHAT FORT", "signal-buy", "pulse-green"
-        elif score > 0:
-            signal_txt, sig_class, pulse = "ACHAT", "signal-buy", ""
-        elif score <= -50:
-            signal_txt, sig_class, pulse = "VENTE FORTE", "signal-sell", "pulse-red"
-        elif score < 0:
-            signal_txt, sig_class, pulse = "VENTE", "signal-sell", ""
-        else:
-            signal_txt, sig_class, pulse = "NEUTRE", "signal-neutral", ""
+        if score >= 50: signal_txt, sig_class, pulse = "ACHAT FORT", "signal-buy", "pulse-green"
+        elif score > 0: signal_txt, sig_class, pulse = "ACHAT", "signal-buy", ""
+        elif score <= -50: signal_txt, sig_class, pulse = "VENTE FORTE", "signal-sell", "pulse-red"
+        elif score < 0: signal_txt, sig_class, pulse = "VENTE", "signal-sell", ""
+        else: signal_txt, sig_class, pulse = "NEUTRE", "signal-neutral", ""
 
         # --- BANDEAU SUPÉRIEUR ---
         st.markdown(f"""
@@ -214,7 +202,7 @@ with st.spinner("Analyse..."):
         else:
             action_html = '<div class="action-box" style="text-align:center; color:#787b86 !important;">Attente de signal clair</div>'
 
-        # --- CONFIGURATION DU GRAPHIQUE POUR MOBILE ---
+        # --- CONFIGURATION DU GRAPHIQUE ---
         fig.update_layout(
             height=400, 
             template="plotly_dark", 
@@ -222,18 +210,17 @@ with st.spinner("Analyse..."):
             paper_bgcolor='#131722', plot_bgcolor='#131722',
             margin=dict(l=5, r=5, t=30, b=5),
             xaxis=dict(
-                # RETOUR DES BOUTONS DE ZOOM
                 rangeselector=dict(
                     buttons=list([
                         dict(count=1, label="1M", step="month", stepmode="backward"),
                         dict(count=3, label="3M", step="month", stepmode="backward"),
                         dict(count=6, label="6M", step="month", stepmode="backward"),
+                        dict(count=1, label="1A", step="year", stepmode="backward"),
                         dict(step="all", label="Max")
                     ]),
                     bgcolor="#1e222d",
                     activecolor="#2a2e39"
                 ),
-                # RETOUR DE LA BARRE DE SCROLL EN BAS
                 rangeslider=dict(visible=True, bgcolor="#1e222d"), 
                 type="date",
                 gridcolor="#2a2e39"
@@ -241,7 +228,7 @@ with st.spinner("Analyse..."):
             yaxis=dict(gridcolor="#2a2e39"),
             legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10))
         )
-        # On garde la barre d'outils cachée mais on active le zoom tactile
+        
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
         
         st.markdown(action_html, unsafe_allow_html=True)
