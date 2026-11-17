@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Mon Bot Trading PRO", page_icon="🚀", layout="wide")
 
 st.title("🚀 Mon Copilote de Trading PRO")
-st.write("Analyse multi-facteurs avec calcul de Stop Loss et Take Profit.")
+st.write("Analyse multi-timeframes avec calcul de risque intégré.")
 
 with st.sidebar:
     st.header("⚙️ Paramètres")
@@ -22,62 +22,109 @@ with st.sidebar:
     choix_actif = st.selectbox("Choisir un actif :", list(actifs.keys()))
     ticker = actifs[choix_actif]
     
-    periode = st.selectbox("Période d'analyse", ["1y", "2y", "5y"], index=0)
+    periode = st.selectbox("Période d'analyse", ["1y", "2y", "5y"], index=1)
     bouton_analyser = st.button("🔄 Lancer l'analyse", type="primary")
 
 @st.cache_data(ttl=3600)
 def charger_donnees(ticker, periode):
-    df = yf.download(ticker, period=periode, interval="1d", progress=False)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df
+    # Données Quotidiennes
+    df_daily = yf.download(ticker, period=periode, interval="1d", progress=False)
+    # Données Hebdomadaires
+    df_weekly = yf.download(ticker, period=periode, interval="1wk", progress=False)
+    
+    for df in [df_daily, df_weekly]:
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+    return df_daily, df_weekly
 
 if bouton_analyser or ticker:
-    with st.spinner("Analyse des marchés et calcul des risques..."):
-        df = charger_donnees(ticker, periode)
+    with st.spinner("Analyse Multi-Timeframes en cours..."):
+        df, df_weekly = charger_donnees(ticker, periode)
         
-        if df.empty:
+        if df.empty or df_weekly.empty:
             st.error("Impossible de trouver ce ticker.")
         else:
-            # Calcul des indicateurs
+            # --- CALCUL INDICATEURS QUOTIDIENS ---
             df['SMA_20'] = ta.sma(df['Close'], length=20)
             df['SMA_50'] = ta.sma(df['Close'], length=50)
             df['SMA_200'] = ta.sma(df['Close'], length=200)
             df['RSI'] = ta.rsi(df['Close'], length=14)
-            df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14) # Nouvel indicateur !
-            
+            df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
             df = df.dropna()
+            
+            # --- CALCUL INDICATEURS HEBDO (SMA 20) ---
+            df_weekly['SMA_20'] = ta.sma(df_weekly['Close'], length=20)
+            df_weekly = df_weekly.dropna()
+            
             dernier = df.iloc[-1]
             avant_dernier = df.iloc[-2]
+            dernier_weekly = df_weekly.iloc[-1]
             
-            # --- CERVEAU DU BOT ---
-            score = 0
-            raisons = []
+            # --- 1. ANALYSE MULTI-TIMEFRAMES ---
+            st.subheader("🌍 Alignement des Tendances")
             
-            if dernier['Close'] > dernier['SMA_200']:
-                score += 30
-                raisons.append("✅ **Tendance de fond** : Haussière (Prix > SMA 200).")
+            # Tendance Hebdo (Macro)
+            if dernier_weekly['Close'] > dernier_weekly['SMA_20']:
+                tendance_hebdo = "HAUSSIÈRE"
+                couleur_hebdo = "green"
+                score_hebdo = 1
             else:
-                score -= 30
-                raisons.append("❌ **Tendance de fond** : Baissière (Prix < SMA 200).")
+                tendance_hebdo = "BAISSIÈRE"
+                couleur_hebdo = "red"
+                score_hebdo = -1
                 
+            # Tendance Quotidienne (Micro)
             if dernier['SMA_20'] > dernier['SMA_50']:
+                tendance_jour = "HAUSSIÈRE"
+                couleur_jour = "green"
+                score_jour = 1
+            else:
+                tendance_jour = "BAISSIÈRE"
+                couleur_jour = "red"
+                score_jour = -1
+
+            col_macro, col_micro = st.columns(2)
+            col_macro.metric("Tendance Hebdomadaire (Fond)", tendance_hebdo, delta="SMA 20 Hebdo" if score_hebdo == 1 else "- SMA 20 Hebdo", delta_color="normal" if score_hebdo == 1 else "inverse")
+            col_micro.metric("Tendance Quotidienne (Actuelle)", tendance_jour, delta="SMA 20 > SMA 50" if score_jour == 1 else "- SMA 20 < SMA 50", delta_color="normal" if score_jour == 1 else "inverse")
+
+            # Verdict de l'alignement
+            if score_hebdo == 1 and score_jour == 1:
+                st.success("🟢 **ALIGNEMENT PARFAIT (Haussier)** : La tendance de fond et la tendance actuelle montent. Les signaux d'achat sont fiables.")
+                alignement_score = 30
+            elif score_hebdo == -1 and score_jour == -1:
+                st.error("🔴 **ALIGNEMENT PARFAIT (Baissier)** : La tendance de fond et la tendance actuelle baissent. Les signaux de vente sont fiables.")
+                alignement_score = -30
+            else:
+                st.warning("⚠️ **CONFLIT DE TENDANCES** : Les deux périodes ne sont pas d'accord. C'est un piège classique ! Le bot te conseille d'attendre.")
+                alignement_score = 0
+
+            st.divider()
+
+            # --- 2. LE SCORE GLOBAL ---
+            score = alignement_score
+            raisons = []
+            raisons.append(f"**Multi-Timeframes** : {'Alignement' if alignement_score != 0 else 'Conflit'} ({alignement_score} pts)")
+
+            # Tendance de fond (SMA 200)
+            if dernier['Close'] > dernier['SMA_200']:
                 score += 20
-                raisons.append("✅ **Momentum** : Positif (SMA 20 > SMA 50).")
+                raisons.append("✅ **Tendance de fond (Daily)** : Haussière (Prix > SMA 200).")
             else:
                 score -= 20
-                raisons.append("❌ **Momentum** : Négatif (SMA 20 < SMA 50).")
+                raisons.append("❌ **Tendance de fond (Daily)** : Baissière (Prix < SMA 200).")
                 
+            # RSI
             if dernier['RSI'] < 30:
-                score += 30
+                score += 20
                 raisons.append(f"✅ **RSI** : Survente ({dernier['RSI']:.1f}).")
             elif dernier['RSI'] > 70:
-                score -= 30
+                score -= 20
                 raisons.append(f"❌ **RSI** : Surachat ({dernier['RSI']:.1f}).")
             else:
                 raisons.append(f"➖ **RSI** : Neutre ({dernier['RSI']:.1f}).")
 
-            # --- AFFICHAGE DES METRIQUES ---
+            # --- 3. AFFICHAGE METRIQUES ---
             col1, col2, col3, col4 = st.columns(4)
             prix_actuel = dernier['Close']
             variation = ((prix_actuel - avant_dernier['Close']) / avant_dernier['Close']) * 100
@@ -86,47 +133,46 @@ if bouton_analyser or ticker:
             col2.metric("RSI (14)", f"{dernier['RSI']:.1f}")
             col3.metric("ATR (Volatilité)", f"{dernier['ATR']:.2f}")
             
+            # On n'autorise un vrai signal que si le score est fort
             if score >= 50:
-                col4.success(f"🟢 ACHAT FORT (Score: +{score})")
+                col4.success(f"🟢 ACHAT FORT\n\nScore: +{score}")
             elif score > 0:
-                col4.info(f"🟡 ACHAT PRUDENT (Score: +{score})")
+                col4.info(f"🟡 ACHAT PRUDENT\n\nScore: +{score}")
             elif score <= -50:
-                col4.error(f"🔴 VENTE FORTE (Score: {score})")
+                col4.error(f"🔴 VENTE FORTE\n\nScore: {score}")
             elif score < 0:
-                col4.warning(f"🟠 VENTE PRUDENTE (Score: {score})")
+                col4.warning(f"🟠 VENTE PRUDENTE\n\nScore: {score}")
             else:
-                col4.info(f"⚪ NEUTRE (Score: {score})")
+                col4.info(f"⚪ NEUTRE\n\nScore: {score}")
 
             st.divider()
 
-            # --- CALCUL DU STOP LOSS ET TAKE PROFIT ---
-            if score > 0:
+            # --- 4. PLAN D'ACTION ---
+            if score >= 20: # On ne prend que les signaux clairs
                 st.subheader("🎯 Plan d'Action (Achat)")
-                # Stop loss à 1.5x ATR en dessous, TP à 3x ATR au dessus
                 stop_loss = prix_actuel - (dernier['ATR'] * 1.5)
                 take_profit = prix_actuel + (dernier['ATR'] * 3.0)
                 
                 col_sl, col_tp = st.columns(2)
-                col_sl.error(f"🛑 **Stop Loss suggéré : {stop_loss:.2f}**\n\n(Place ton alerte ici pour limiter les pertes)")
-                col_tp.success(f"💰 **Take Profit suggéré : {take_profit:.2f}**\n\n(Objectif de gain avec un ratio Risque/Récompense de 1:2)")
+                col_sl.error(f"🛑 **Stop Loss suggéré : {stop_loss:.2f}**")
+                col_tp.success(f"💰 **Take Profit suggéré : {take_profit:.2f}**")
             
-            elif score < 0:
-                st.subheader("🎯 Plan d'Action (Vente à découvert / Short)")
-                # Pour une vente, le stop loss est au-dessus, et le TP en dessous
+            elif score <= -20:
+                st.subheader("🎯 Plan d'Action (Vente à découvert)")
                 stop_loss = prix_actuel + (dernier['ATR'] * 1.5)
                 take_profit = prix_actuel - (dernier['ATR'] * 3.0)
                 
                 col_sl, col_tp = st.columns(2)
-                col_sl.error(f"🛑 **Stop Loss suggéré : {stop_loss:.2f}**\n\n(Si le prix monte au-dessus, tu coupes)")
-                col_tp.success(f"💰 **Take Profit suggéré : {take_profit:.2f}**\n\n(Objectif de baisse)")
+                col_sl.error(f"🛑 **Stop Loss suggéré : {stop_loss:.2f}**")
+                col_tp.success(f"💰 **Take Profit suggéré : {take_profit:.2f}**")
             
             else:
-                st.info("⚪ **Signal Neutre** : Pas de plan d'action défini. Mieux vaut attendre que le marché se décide.")
+                st.info("⚪ **Aucun plan d'action défini** : Les conditions ne sont pas réunies pour prendre un risque.")
 
             st.divider()
 
-            # --- ONGLETS ---
-            onglet_graphique, onglet_explication, onglet_donnees = st.tabs(["📈 Graphique", "🧠 Analyse", "📊 Données"])
+            # --- 5. ONGLETS ---
+            onglet_graphique, onglet_explication = st.tabs(["📈 Graphique", "🧠 Analyse"])
             
             with onglet_graphique:
                 fig = go.Figure()
@@ -134,19 +180,13 @@ if bouton_analyser or ticker:
                 fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='orange', width=1.5), name="SMA 50"))
                 fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='red', width=2), name="SMA 200"))
                 
-                # Ajout des lignes SL et TP sur le graphique si signal
-                if score > 0 or score < 0:
+                if score >= 20 or score <= -20:
                     fig.add_hline(y=stop_loss, line_dash="dash", line_color="red", annotation_text="Stop Loss")
                     fig.add_hline(y=take_profit, line_dash="dash", line_color="green", annotation_text="Take Profit")
-                    fig.add_hline(y=prix_actuel, line_dash="dot", line_color="blue", annotation_text="Prix Actuel")
 
-                fig.update_layout(height=500, xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=30, b=0), template="plotly_dark")
+                fig.update_layout(height=500, xaxis_rangeslider_visible=False, template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
 
             with onglet_explication:
-                st.write("### Voici l'analyse détaillée du bot :")
                 for raison in raisons:
                     st.write(raison)
-
-            with onglet_donnees:
-                st.dataframe(df.tail(10)[['Open', 'High', 'Low', 'Close', 'RSI', 'ATR']], use_container_width=True)
