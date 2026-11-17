@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Terminal Trading", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS SUR MESURE ---
+# --- CSS SUR MESURE (TRADINGVIEW STYLE) ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
@@ -25,6 +25,7 @@ st.markdown("""
         color: #d1d4dc !important;
     }
 
+    /* Bandeau supérieur */
     .top-bar {
         display: flex;
         justify-content: space-between;
@@ -36,7 +37,7 @@ st.markdown("""
         border: 1px solid #2a2e39;
     }
     
-    .metric-box { text-align: center; }
+    .metric-box { text-align: center; flex: 1; }
     .metric-label { font-size: 10px; color: #787b86 !important; text-transform: uppercase; }
     .metric-value { font-size: 16px; font-weight: 800; color: #ffffff !important; }
 
@@ -44,6 +45,7 @@ st.markdown("""
     .signal-sell { color: #f23645 !important; }
     .signal-neutral { color: #fbc02d !important; }
 
+    /* Animation Pulse */
     @keyframes pulse-green {
         0% { box-shadow: 0 0 0 0 rgba(8, 153, 129, 0.7); }
         70% { box-shadow: 0 0 0 10px rgba(8, 153, 129, 0); }
@@ -58,6 +60,7 @@ st.markdown("""
     .pulse-green { background: rgba(8, 153, 129, 0.15); border: 1px solid #089981; border-radius: 6px; padding: 5px 10px; animation: pulse-green 2s infinite; }
     .pulse-red { background: rgba(242, 54, 69, 0.15); border: 1px solid #f23645; border-radius: 6px; padding: 5px 10px; animation: pulse-red 2s infinite; }
 
+    /* Boîtes d'information */
     .action-box {
         background: #1e222d;
         border: 1px solid #2a2e39;
@@ -74,6 +77,8 @@ st.markdown("""
         border-bottom: 1px solid #2a2e39;
         padding-bottom: 5px;
     }
+    
+    .badge-macro { background: rgba(30, 34, 45, 0.8); border: 1px solid #2a2e39; padding: 5px; border-radius: 4px; font-size: 12px; text-align: center; margin-bottom: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,12 +97,11 @@ with st.sidebar:
     capital = st.number_input("Capital ($)", min_value=10.0, value=50.0, step=10.0)
     risque_pct = st.slider("Risque (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
     
-    if st.button("Actualiser les données", type="primary"):
+    if st.button("Actualiser", type="primary"):
         st.cache_data.clear()
 
 @st.cache_data(ttl=60)
 def charger_donnees(ticker):
-    # On télécharge TOUJOURS 2 ans de données pour que les calculs soient parfaits
     df = yf.download(ticker, period="2y", interval="1d", progress=False)
     df_w = yf.download(ticker, period="2y", interval="1wk", progress=False)
     for d in [df, df_w]:
@@ -110,38 +114,62 @@ with st.spinner("Analyse..."):
     df, df_w = charger_donnees(ticker)
     
     if not df.empty and not df_w.empty:
-        # Calcul des indicateurs
+        # Indicateurs
         df['SMA_20'] = ta.sma(df['Close'], length=20)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
         df['SMA_200'] = ta.sma(df['Close'], length=200)
         df['RSI'] = ta.rsi(df['Close'], length=14)
         df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
-        
-        # On supprime les lignes vides (le début, car la SMA 200 n'existe pas encore)
         df = df.dropna()
         
-        # SÉCURITÉ ANTI-CRASH : Si l'actif est trop récent et n'a pas 200 jours d'historique
-        if df.empty:
-            st.error("Données insuffisantes pour cet actif (il faut au moins 200 jours d'historique pour calculer les indicateurs).")
-            st.stop()
-            
         df_w['SMA_20'] = ta.sma(df_w['Close'], length=20)
         df_w = df_w.dropna()
         
+        if df.empty or df_w.empty:
+            st.error("Données insuffisantes.")
+            st.stop()
+            
         dernier = df.iloc[-1]
         avant = df.iloc[-2]
         dernier_w = df_w.iloc[-1]
         
-        # Logique de score
-        score = 0
-        if dernier_w['Close'] > dernier_w['SMA_20']: score += 30
-        else: score -= 30
+        # --- ANALYSE MULTI-TIMEFRAMES ---
+        macro_bull = dernier_w['Close'] > dernier_w['SMA_20']
+        micro_bull = dernier['SMA_20'] > dernier['SMA_50']
         
-        if dernier['Close'] > dernier['SMA_200']: score += 20
-        else: score -= 20
+        score = 0
+        raisons = []
+        
+        if macro_bull and micro_bull:
+            score += 30
+            raisons.append("Alignement parfait haussier (Macro + Micro).")
+            align_txt = "Aligné Haussier"
+            align_color = "#089981"
+        elif not macro_bull and not micro_bull:
+            score -= 30
+            raisons.append("Alignement parfait baissier (Macro + Micro).")
+            align_txt = "Aligné Baissier"
+            align_color = "#f23645"
+        else:
+            raisons.append("Conflit de tendances (Macro et Micro ne sont pas d'accord).")
+            align_txt = "Conflit de Tendance"
+            align_color = "#fbc02d"
             
-        if dernier['RSI'] < 30: score += 20
-        elif dernier['RSI'] > 70: score -= 20
+        if dernier['Close'] > dernier['SMA_200']:
+            score += 20
+            raisons.append("Prix au-dessus de la SMA 200 (Tendance de fond haussière).")
+        else:
+            score -= 20
+            raisons.append("Prix en-dessous de la SMA 200 (Tendance de fond baissière).")
+            
+        if dernier['RSI'] < 30:
+            score += 20
+            raisons.append(f"RSI en survente ({dernier['RSI']:.1f}).")
+        elif dernier['RSI'] > 70:
+            score -= 20
+            raisons.append(f"RSI en surachat ({dernier['RSI']:.1f}).")
+        else:
+            raisons.append(f"RSI neutre ({dernier['RSI']:.1f}).")
 
         prix = dernier['Close']
         variation = ((prix - avant['Close']) / avant['Close']) * 100
@@ -171,65 +199,86 @@ with st.spinner("Analyse..."):
         </div>
         """, unsafe_allow_html=True)
 
-        # --- GRAPHIQUE ---
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(
-            x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
-            name="Prix", increasing_line_color='#089981', decreasing_line_color='#f23645'
-        ))
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='#fbc02d', width=1), name="SMA 50"))
-        
-        action_html = ""
-        if score >= 20 or score <= -20:
-            is_long = score >= 20
-            sl = prix - (dernier['ATR'] * 1.5) if is_long else prix + (dernier['ATR'] * 1.5)
-            tp = prix + (dernier['ATR'] * 3.0) if is_long else prix - (dernier['ATR'] * 3.0)
-            
-            risque = capital * (risque_pct / 100)
-            dist = abs(prix - sl)
-            qte = risque / dist
-            
-            fig.add_hline(y=sl, line_dash="dash", line_color="#f23645", annotation_text="SL", annotation_position="top right")
-            fig.add_hline(y=tp, line_dash="dash", line_color="#089981", annotation_text="TP", annotation_position="bottom right")
-            
-            action_html = f"""
-            <div class="action-box">
-                <div class="action-row"><span>Stop Loss</span> <span style="color:#f23645 !important; font-weight:bold;">{sl:,.2f}</span></div>
-                <div class="action-row"><span>Take Profit</span> <span style="color:#089981 !important; font-weight:bold;">{tp:,.2f}</span></div>
-                <div class="action-row" style="border:none;"><span>Quantité</span> <span style="color:#ffffff !important; font-weight:bold;">{qte:.4f}</span></div>
-            </div>
-            """
-        else:
-            action_html = '<div class="action-box" style="text-align:center; color:#787b86 !important;">Attente de signal clair</div>'
+        # --- MISE EN PAGE EN 2 COLONNES (Graphique à gauche, Infos à droite) ---
+        col_graph, col_info = st.columns([2, 1])
 
-        # --- CONFIGURATION DU GRAPHIQUE ---
-        fig.update_layout(
-            height=400, 
-            template="plotly_dark", 
-            dragmode="pan", 
-            paper_bgcolor='#131722', plot_bgcolor='#131722',
-            margin=dict(l=5, r=5, t=30, b=5),
-            xaxis=dict(
-                rangeselector=dict(
-                    buttons=list([
-                        dict(count=1, label="1M", step="month", stepmode="backward"),
-                        dict(count=3, label="3M", step="month", stepmode="backward"),
-                        dict(count=6, label="6M", step="month", stepmode="backward"),
-                        dict(count=1, label="1A", step="year", stepmode="backward"),
-                        dict(step="all", label="Max")
-                    ]),
-                    bgcolor="#1e222d",
-                    activecolor="#2a2e39"
+        with col_graph:
+            fig = go.Figure()
+            fig.add_trace(go.Candlestick(
+                x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
+                name="Prix", increasing_line_color='#089981', decreasing_line_color='#f23645'
+            ))
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='#fbc02d', width=1), name="SMA 50"))
+            
+            if score >= 20 or score <= -20:
+                is_long = score >= 20
+                sl = prix - (dernier['ATR'] * 1.5) if is_long else prix + (dernier['ATR'] * 1.5)
+                tp = prix + (dernier['ATR'] * 3.0) if is_long else prix - (dernier['ATR'] * 3.0)
+                
+                fig.add_hline(y=sl, line_dash="dash", line_color="#f23645", annotation_text="SL", annotation_position="top right")
+                fig.add_hline(y=tp, line_dash="dash", line_color="#089981", annotation_text="TP", annotation_position="bottom right")
+
+            # --- CORRECTION DU ZOOM INITIAL ---
+            # On force l'affichage sur les 90 derniers jours (environ 3 mois)
+            x_min = df.index[-90] if len(df) > 90 else df.index[0]
+            x_max = df.index[-1]
+
+            fig.update_layout(
+                height=500, 
+                template="plotly_dark", 
+                dragmode="pan", 
+                paper_bgcolor='#131722', plot_bgcolor='#131722',
+                margin=dict(l=5, r=5, t=30, b=5),
+                xaxis=dict(
+                    range=[x_min, x_max], # Force le zoom
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=1, label="1M", step="month", stepmode="backward"),
+                            dict(count=3, label="3M", step="month", stepmode="backward"),
+                            dict(count=6, label="6M", step="month", stepmode="backward"),
+                            dict(count=1, label="1A", step="year", stepmode="backward"),
+                            dict(step="all", label="Max")
+                        ]),
+                        bgcolor="#1e222d", activecolor="#2a2e39"
+                    ),
+                    rangeslider=dict(visible=True, bgcolor="#1e222d"), 
+                    type="date", gridcolor="#2a2e39"
                 ),
-                rangeslider=dict(visible=True, bgcolor="#1e222d"), 
-                type="date",
-                gridcolor="#2a2e39"
-            ),
-            yaxis=dict(gridcolor="#2a2e39"),
-            legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10))
-        )
-        
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
-        
-        st.markdown(action_html, unsafe_allow_html=True)
+                yaxis=dict(gridcolor="#2a2e39"),
+                legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10))
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
+
+        with col_info:
+            # Analyse Multi-TF
+            st.markdown(f"<div class='badge-macro' style='color:{align_color} !important; font-weight:bold;'>{align_txt}</div>", unsafe_allow_html=True)
+            
+            macro_txt = "Haussier" if macro_bull else "Baissier"
+            micro_txt = "Haussier" if micro_bull else "Baissier"
+            st.markdown(f"<div style='font-size:12px; margin-bottom:10px;'>Macro (Hebdo) : <b>{macro_txt}</b><br>Micro (Jour) : <b>{micro_txt}</b></div>", unsafe_allow_html=True)
+            
+            # Plan d'action
+            if score >= 20 or score <= -20:
+                is_long = score >= 20
+                risque = capital * (risque_pct / 100)
+                dist = abs(prix - sl)
+                qte = risque / dist
+                
+                st.markdown(f"""
+                <div class="action-box">
+                    <div style="font-size:12px; color:#787b86 !important; margin-bottom:5px;">Plan d'action ({'Achat' if is_long else 'Vente'})</div>
+                    <div class="action-row"><span>Stop Loss</span> <span style="color:#f23645 !important; font-weight:bold;">{sl:,.2f}</span></div>
+                    <div class="action-row"><span>Take Profit</span> <span style="color:#089981 !important; font-weight:bold;">{tp:,.2f}</span></div>
+                    <div class="action-row" style="border:none;"><span>Quantité</span> <span style="color:#ffffff !important; font-weight:bold;">{qte:.4f}</span></div>
+                    <div style="font-size:11px; margin-top:5px; color:#787b86 !important;">Risque max: {risque:.2f} $</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("Aucun plan d'action. Attente de signal clair.")
+
+            # Détail de l'analyse
+            with st.expander("Détail du score"):
+                for r in raisons:
+                    st.write(f"- {r}")
+
         st.markdown(f"<div style='text-align:center; font-size:10px; color:#787b86 !important; margin-top:10px;'>Données du {df.index[-1].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
