@@ -5,12 +5,12 @@ import pandas_ta_classic as ta
 import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Terminal d'Analyse", page_icon="", layout="wide")
+st.set_page_config(page_title="Terminal d'Analyse", layout="wide")
 
-# --- INJECTION DU CSS POUR LE DESIGN ULTRA COLOSSAL ---
+# --- INJECTION DU CSS (DESIGN ET ANIMATIONS) ---
 st.markdown("""
 <style>
-    /* Importation d'une police professionnelle */
+    /* Police professionnelle */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
     
     /* Fond dégradé sombre */
@@ -20,22 +20,21 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
-    /* Effet Glassmorphism sur les métriques */
+    /* --- DESIGN DE LA SIDEBAR --- */
+    [data-testid="stSidebar"] {
+        background: rgba(15, 23, 42, 0.4) !important;
+        backdrop-filter: blur(15px);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    /* Effet Glassmorphism sur les métriques (Prix, RSI, ATR) */
     div[data-testid="stMetric"] {
         background: rgba(30, 41, 59, 0.6);
         backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 16px;
-        padding: 20px;
+        padding: 15px 20px;
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(56, 189, 248, 0.3);
     }
     
     /* Style des boutons */
@@ -48,39 +47,67 @@ st.markdown("""
         font-weight: 600;
         padding: 12px 24px;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
         color: white;
-        border: none;
     }
     
-    /* Style des onglets */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-        background-color: transparent;
+    /* --- ANIMATION CLIGNOTANTE (PULSE) --- */
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    @keyframes pulse-green {
+        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
     
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent;
-        border-bottom: 2px solid transparent;
+    /* Style des blocs de signal */
+    .signal-box {
+        padding: 15px;
+        border-radius: 16px;
+        text-align: center;
+        font-weight: 800;
+        font-size: 1.4rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        border: 2px solid transparent;
+    }
+    
+    /* Achat (Vert) */
+    .signal-achat {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: #10b981;
+        color: #10b981;
+        animation: pulse-green 2s infinite;
+    }
+    
+    /* Vente (Rouge) */
+    .signal-vente {
+        background: rgba(239, 68, 68, 0.1);
+        border-color: #ef4444;
+        color: #ef4444;
+        animation: pulse-red 2s infinite;
+    }
+    
+    /* Neutre (Gris) */
+    .signal-neutre {
+        background: rgba(148, 163, 184, 0.1);
+        border-color: #94a3b8;
         color: #94a3b8;
-        font-weight: 600;
-        padding-bottom: 8px;
     }
     
+    /* Onglets */
     .stTabs [aria-selected="true"] {
         color: #38bdf8 !important;
         border-bottom: 2px solid #38bdf8 !important;
-    }
-    
-    /* Titres */
-    h1, h2, h3 {
-        font-weight: 800;
-        letter-spacing: -0.5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -108,8 +135,8 @@ with st.sidebar:
     
     st.divider()
     st.header("Gestion du Capital")
-    capital = st.number_input("Capital total (USD)", min_value=10.0, value=100.0, step=10.0)
-    risque_pct = st.slider("Risque alloué par trade (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5, help="Règle de gestion : ne jamais risquer plus de 1 à 2% de son capital par position.")
+    capital = st.number_input("Capital total (USD)", min_value=10.0, value=50.0, step=10.0)
+    risque_pct = st.slider("Risque alloué par trade (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
     
     bouton_analyser = st.button("Actualiser l'analyse")
 
@@ -198,8 +225,8 @@ with st.spinner("Extraction des données et calcul des indicateurs..."):
         else:
             raisons.append(f"RSI : Zone neutre ({dernier['RSI']:.1f}).")
 
-        # --- METRIQUES ET SIGNAL ---
-        col1, col2, col3, col4 = st.columns(4)
+        # --- METRIQUES ET SIGNAL (DESIGN SUR MESURE) ---
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1.5]) # Colonne 4 plus large
         prix_actuel = dernier['Close']
         variation = ((prix_actuel - avant_dernier['Close']) / avant_dernier['Close']) * 100
         
@@ -207,16 +234,19 @@ with st.spinner("Extraction des données et calcul des indicateurs..."):
         col2.metric("RSI (14)", f"{dernier['RSI']:.1f}")
         col3.metric("Volatilité (ATR)", f"{dernier['ATR']:.2f}")
         
+        # Insertion du bloc HTML personnalisé pour le signal
         if score >= 50:
-            col4.metric("Signal Système", "Achat Fort", f"Score: +{score}")
+            signal_html = f'<div class="signal-box signal-achat">ACHAT FORT<br><span style="font-size: 1rem;">Score: +{score}</span></div>'
         elif score > 0:
-            col4.metric("Signal Système", "Achat Prudent", f"Score: +{score}")
+            signal_html = f'<div class="signal-box signal-achat" style="animation: none; border-color: #34d399;">ACHAT PRUDENT<br><span style="font-size: 1rem;">Score: +{score}</span></div>'
         elif score <= -50:
-            col4.metric("Signal Système", "Vente Forte", f"Score: {score}")
+            signal_html = f'<div class="signal-box signal-vente">VENTE FORTE<br><span style="font-size: 1rem;">Score: {score}</span></div>'
         elif score < 0:
-            col4.metric("Signal Système", "Vente Prudente", f"Score: {score}")
+            signal_html = f'<div class="signal-box signal-vente" style="animation: none; border-color: #f87171;">VENTE PRUDENTE<br><span style="font-size: 1rem;">Score: {score}</span></div>'
         else:
-            col4.metric("Signal Système", "Neutre", f"Score: {score}")
+            signal_html = f'<div class="signal-box signal-neutre">NEUTRE<br><span style="font-size: 1rem;">Score: {score}</span></div>'
+            
+        col4.markdown(signal_html, unsafe_allow_html=True)
 
         st.divider()
 
@@ -275,27 +305,21 @@ with st.spinner("Extraction des données et calcul des indicateurs..."):
         
         with onglet_graphique:
             fig = go.Figure()
-            # Chandeliers
             fig.add_trace(go.Candlestick(
                 x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
                 name="Prix", 
                 increasing_line_color='#38bdf8', decreasing_line_color='#f43f5e'
             ))
-            # Moyennes mobiles
             fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='#fbbf24', width=1.5), name="SMA 50"))
             fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='#a855f7', width=2), name="SMA 200"))
             
-            # Lignes SL/TP
             if score >= 20 or score <= -20:
                 fig.add_hline(y=stop_loss, line_dash="dot", line_color="#f43f5e", annotation_text="Stop Loss")
                 fig.add_hline(y=take_profit, line_dash="dot", line_color="#10b981", annotation_text="Take Profit")
 
             fig.update_layout(
-                height=550, 
-                template="plotly_dark", 
-                dragmode="pan", # Mode déplacement fluide
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
+                height=550, template="plotly_dark", dragmode="pan", 
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 xaxis=dict(
                     rangeselector=dict(
                         buttons=list([
