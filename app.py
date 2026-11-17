@@ -184,7 +184,35 @@ if bouton_analyser or ticker:
                     fig.add_hline(y=stop_loss, line_dash="dash", line_color="red", annotation_text="Stop Loss")
                     fig.add_hline(y=take_profit, line_dash="dash", line_color="green", annotation_text="Take Profit")
 
-                fig.update_layout(height=500, xaxis_rangeslider_visible=False, template="plotly_dark")
+                                # ... (le début de ton graphique reste pareil) ...
+                fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='orange', width=1.5), name="SMA 50"))
+                fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='red', width=2), name="SMA 200"))
+                
+                if score >= 20 or score <= -20:
+                    fig.add_hline(y=stop_loss, line_dash="dash", line_color="red", annotation_text="Stop Loss")
+                    fig.add_hline(y=take_profit, line_dash="dash", line_color="green", annotation_text="Take Profit")
+
+                # --- C'EST ICI QU'ON ACTIVE LE ZOOM ET LE SCROLL ---
+                fig.update_layout(
+                    height=500, 
+                    template="plotly_dark",
+                    # On active la souris pour glisser le graphique
+                    dragmode="pan", 
+                    # On configure la navigation
+                    xaxis=dict(
+                        rangeselector=dict(
+                            buttons=list([
+                                dict(count=1, label="1m", step="month", stepmode="backward"),
+                                dict(count=3, label="3m", step="month", stepmode="backward"),
+                                dict(count=6, label="6m", step="month", stepmode="backward"),
+                                dict(count=1, label="1a", step="year", stepmode="backward"),
+                                dict(step="all", label="Tout")
+                            ])
+                        ),
+                        rangeslider=dict(visible=True), # La petite barre de scroll en bas
+                        type="date"
+                    )
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
             with onglet_explication:
