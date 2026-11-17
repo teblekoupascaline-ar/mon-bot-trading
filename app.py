@@ -29,7 +29,7 @@ with st.sidebar:
     bouton_analyser = st.button("🔄 Lancer l'analyse", type="primary")
 
 # --- CHARGEMENT DES DONNEES ---
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def charger_donnees(ticker, periode):
     # Données Quotidiennes
     df_daily = yf.download(ticker, period=periode, interval="1d", progress=False)
