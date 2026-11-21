@@ -25,7 +25,6 @@ st.markdown("""
         color: #d1d4dc !important;
     }
 
-    /* Bandeau supérieur */
     .top-bar {
         display: flex;
         justify-content: space-between;
@@ -45,7 +44,6 @@ st.markdown("""
     .signal-sell { color: #f23645 !important; }
     .signal-neutral { color: #fbc02d !important; }
 
-    /* Animation Pulse */
     @keyframes pulse-green {
         0% { box-shadow: 0 0 0 0 rgba(8, 153, 129, 0.7); }
         70% { box-shadow: 0 0 0 10px rgba(8, 153, 129, 0); }
@@ -60,7 +58,6 @@ st.markdown("""
     .pulse-green { background: rgba(8, 153, 129, 0.15); border: 1px solid #089981; border-radius: 6px; padding: 5px 10px; animation: pulse-green 2s infinite; }
     .pulse-red { background: rgba(242, 54, 69, 0.15); border: 1px solid #f23645; border-radius: 6px; padding: 5px 10px; animation: pulse-red 2s infinite; }
 
-    /* Boîtes d'information */
     .action-box {
         background: #1e222d;
         border: 1px solid #2a2e39;
@@ -86,9 +83,13 @@ st.markdown("""
 with st.sidebar:
     st.header("Paramètres Système")
     actifs = {
-        "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD", 
-        "EUR/USD": "EURUSD=X", "Apple": "AAPL", 
-        "Tesla": "TSLA", "S&P 500": "^GSPC"
+        "Bitcoin": "BTC-USD", 
+        "Ethereum": "ETH-USD", 
+        "Or (XAU/USD)": "GC=F", # <--- L'OR EST AJOUTÉ ICI
+        "EUR/USD": "EURUSD=X", 
+        "Apple": "AAPL", 
+        "Tesla": "TSLA", 
+        "S&P 500": "^GSPC"
     }
     choix_actif = st.selectbox("Actif", list(actifs.keys()))
     ticker = actifs[choix_actif]
@@ -114,7 +115,6 @@ with st.spinner("Analyse..."):
     df, df_w = charger_donnees(ticker)
     
     if not df.empty and not df_w.empty:
-        # Indicateurs
         df['SMA_20'] = ta.sma(df['Close'], length=20)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
         df['SMA_200'] = ta.sma(df['Close'], length=200)
@@ -133,7 +133,6 @@ with st.spinner("Analyse..."):
         avant = df.iloc[-2]
         dernier_w = df_w.iloc[-1]
         
-        # --- ANALYSE MULTI-TIMEFRAMES ---
         macro_bull = dernier_w['Close'] > dernier_w['SMA_20']
         micro_bull = dernier['SMA_20'] > dernier['SMA_50']
         
@@ -180,7 +179,6 @@ with st.spinner("Analyse..."):
         elif score < 0: signal_txt, sig_class, pulse = "VENTE", "signal-sell", ""
         else: signal_txt, sig_class, pulse = "NEUTRE", "signal-neutral", ""
 
-        # --- BANDEAU SUPÉRIEUR ---
         st.markdown(f"""
         <div class="top-bar">
             <div class="metric-box">
@@ -199,7 +197,6 @@ with st.spinner("Analyse..."):
         </div>
         """, unsafe_allow_html=True)
 
-        # --- MISE EN PAGE EN 2 COLONNES (Graphique à gauche, Infos à droite) ---
         col_graph, col_info = st.columns([2, 1])
 
         with col_graph:
@@ -218,8 +215,6 @@ with st.spinner("Analyse..."):
                 fig.add_hline(y=sl, line_dash="dash", line_color="#f23645", annotation_text="SL", annotation_position="top right")
                 fig.add_hline(y=tp, line_dash="dash", line_color="#089981", annotation_text="TP", annotation_position="bottom right")
 
-            # --- CORRECTION DU ZOOM INITIAL ---
-            # On force l'affichage sur les 90 derniers jours (environ 3 mois)
             x_min = df.index[-90] if len(df) > 90 else df.index[0]
             x_max = df.index[-1]
 
@@ -230,7 +225,7 @@ with st.spinner("Analyse..."):
                 paper_bgcolor='#131722', plot_bgcolor='#131722',
                 margin=dict(l=5, r=5, t=30, b=5),
                 xaxis=dict(
-                    range=[x_min, x_max], # Force le zoom
+                    range=[x_min, x_max],
                     rangeselector=dict(
                         buttons=list([
                             dict(count=1, label="1M", step="month", stepmode="backward"),
@@ -250,14 +245,12 @@ with st.spinner("Analyse..."):
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
 
         with col_info:
-            # Analyse Multi-TF
             st.markdown(f"<div class='badge-macro' style='color:{align_color} !important; font-weight:bold;'>{align_txt}</div>", unsafe_allow_html=True)
             
             macro_txt = "Haussier" if macro_bull else "Baissier"
             micro_txt = "Haussier" if micro_bull else "Baissier"
             st.markdown(f"<div style='font-size:12px; margin-bottom:10px;'>Macro (Hebdo) : <b>{macro_txt}</b><br>Micro (Jour) : <b>{micro_txt}</b></div>", unsafe_allow_html=True)
             
-            # Plan d'action
             if score >= 20 or score <= -20:
                 is_long = score >= 20
                 risque = capital * (risque_pct / 100)
@@ -276,7 +269,6 @@ with st.spinner("Analyse..."):
             else:
                 st.info("Aucun plan d'action. Attente de signal clair.")
 
-            # Détail de l'analyse
             with st.expander("Détail du score"):
                 for r in raisons:
                     st.write(f"- {r}")
